@@ -15,27 +15,50 @@ The pipeline also includes spatial data visualization via Folium and sentiment d
 
 ## Architecture & RL Formulation
 
-This project models the prompt selection problem as a Contextual Multi-Armed Bandit:
+```mermaid
+graph TD
+    %% Data Source
+    Data[(Crime Data: Excel)] -->|Extract Incident| LLM1(LLM: Alert Generator)
 
-*   **State Space ($\mathcal{S}$):** Discrete representation of the initial alert's negativity (derived from VADER's compound score).
-    *   State 0: Very Negative ($< -0.5$)
-    *   State 1: Slightly Negative ($[-0.5, 0)$)
-    *   State 2: Neutral/Positive ($\ge 0$)
-*   **Action Space ($\mathcal{A}$):** Three distinct LLM prompt engineering strategies for the follow-up message:
-    *   Action 0: Emphasize rapid response and police bravery.
-    *   Action 1: Emphasize community cooperation and unity.
-    *   Action 2: Emphasize preventive patrols and visible presence.
-*   **Reward Function ($\mathcal{R}$):** The continuous compound sentiment score ($[-1, 1]$) of the generated follow-up post, evaluated by NLTK. The goal is to maximize the positivity (reassurance) of the follow-up.
-*   **Policy & Update Rule:** The agent employs an $\epsilon$-greedy policy ($\epsilon=0.2$) to balance exploration of prompt strategies with the exploitation of known high-reward strategies. The Q-values are updated using a simplified Bellman equation (bandit setting with no future state transitions): $Q(s,a) \leftarrow Q(s,a) + \alpha [r - Q(s,a)]$, where $\alpha=0.1$.
+    %% Phase 1: State Observation
+    subgraph Phase 1: State Observation
+        LLM1 -->|Gemma-4-26b| Alert[Alert Post]
+        Alert -->|Analyze Sentiment| NLTK1(NLTK VADER)
+        NLTK1 -->|Compound Score| Classifier{State Classifier}
+        Classifier -->|Score < -0.5| S0[State 0: Very Negative]
+        Classifier -->|-0.5 <= Score < 0| S1[State 1: Slightly Negative]
+        Classifier -->|Score >= 0| S2[State 2: Neutral/Positive]
+    end
 
-## Prerequisites
+    %% Phase 2: RL Agent (Contextual Bandit)
+    subgraph Phase 2: Contextual Bandit Policy
+        S0 & S1 & S2 --> Agent((RL Agent))
+        Agent -.->|Reads state-action values| QTable[(Q-Table.json)]
+        Agent -->|ε-greedy Policy| A0[Action 0: Bravery Prompt]
+        Agent -->|ε-greedy Policy| A1[Action 1: Community Prompt]
+        Agent -->|ε-greedy Policy| A2[Action 2: Presence Prompt]
+    end
 
-*   Python 3.8+
-*   An API Key from [OpenRouter](https://openrouter.ai/) (or OpenAI) to query the Gemma model.
+    %% Phase 3: Action Execution & Reward
+    subgraph Phase 3: Execution & Reward
+        A0 & A1 & A2 --> LLM2(LLM: Follow-up Generator)
+        LLM2 -->|Gemma-4-26b| FollowUp[Follow-up Post]
+        FollowUp -->|Analyze Sentiment| NLTK2(NLTK VADER)
+        NLTK2 -->|Compound Score| Reward((Reward R))
+    end
 
-### Dependencies
+    %% Value Iteration Update Loop
+    Reward -->|Bellman Update Loop| QTable
+    
+    %% Output Generation
+    FollowUp -.-> OutTXT[mensagens_geradas.txt]
+    Data -.-> OutMap[mapa_crimes.html]
+    Reward -.-> OutChart[grafico_sentimentos.html]
 
-Install the required packages via pip:
-
-```bash
-pip install pandas folium matplotlib nltk openai openpyxl
+    classDef llm fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef nlp fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef rl fill:#bfb,stroke:#333,stroke-width:2px;
+    
+    class LLM1,LLM2 llm;
+    class NLTK1,NLTK2 nlp;
+    class Agent,QTable rl;
