@@ -1,0 +1,6 @@
+folium
+matplotlib
+nltk
+openai
+openpyxl
+pandas
