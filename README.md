@@ -62,7 +62,7 @@ flowchart TD
 From the project root, run:
 
 ```bash
-python rl_sentimental_app.py
+python rl_sentiment_app.py
 ```
 
 Messages are generated in English. Sentiment is analyzed with VADER. The Q-table selects among three prompts for the policing post and is updated using that post's sentiment score.
