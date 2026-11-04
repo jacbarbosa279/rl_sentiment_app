@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+output/
+data/processed/mensagens_geradas.txt
+q_table.json
+

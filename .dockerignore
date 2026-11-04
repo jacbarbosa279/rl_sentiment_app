@@ -1,0 +1,10 @@
+.git/
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+output/
+data/processed/mensagens_geradas.txt
+docs/
+

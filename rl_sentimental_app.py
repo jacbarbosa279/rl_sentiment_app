@@ -1,5 +1,3 @@
-import base64
-from io import BytesIO
 import os
 from pathlib import Path
 import webbrowser
@@ -18,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "data" / "raw" / "VeiculosSubtraidos_2024.xlsx"
 MESSAGES_PATH = BASE_DIR / "data" / "processed" / "mensagens_geradas.txt"
 OUTPUT_DIR = BASE_DIR / "output"
-CHART_PATH = OUTPUT_DIR / "grafico_sentimentos.html"
+CHART_PATH = OUTPUT_DIR / "grafico_sentimentos.png"
 MAP_PATH = OUTPUT_DIR / "mapa_crimes.html"
 Q_TABLE_PATH = OUTPUT_DIR / "q_table.json"
 LEGACY_Q_TABLE_PATH = BASE_DIR / "q_table.json"
@@ -276,24 +274,14 @@ def generate_sentiment_chart(robbery_sentiments, policing_sentiments):
         plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
 
-    tmpfile = BytesIO()
-    plt.savefig(tmpfile, format='png', bbox_inches='tight')
-    encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Sentiment Analysis</title></head>
-<body><img alt="Sentiment analysis chart" src="data:image/png;base64,{encoded}"></body>
-</html>"""
-    
+
     CHART_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CHART_PATH, 'w', encoding='utf-8') as f:
-        f.write(html)
-    
+    plt.savefig(CHART_PATH, format='png', bbox_inches='tight')
     print(f"Chart saved to {CHART_PATH}")
     plt.close()
 
     if not webbrowser.open(CHART_PATH.resolve().as_uri()):
-        print("Could not open the browser automatically; open the HTML file at the path above.")
+        print("Could not open the chart automatically; open the PNG file at the path above.")
 
 
 if __name__ == "__main__":
