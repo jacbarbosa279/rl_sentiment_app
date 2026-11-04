@@ -1,6 +1,0 @@
-
-mapa.save("output/mapa_crimes.html")
-
-
-with open("output/grafico_sentimentos.html", "w", encoding="utf-8") as f:
-    f.write(html_content)
