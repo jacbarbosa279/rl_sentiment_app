@@ -1,62 +1,42 @@
-# Sentiment Analysis App
+# Aplicativo de análise de sentimentos
 
-This project generates social media posts about vehicle theft incidents, analyzes the sentiment of the text, updates a reinforcement learning Q-table, and creates a map of incidents and a sentiment chart.
+Este projeto gera publicações sobre ocorrências de roubo de veículos, analisa o sentimento dos textos, atualiza uma tabela Q de aprendizado por reforço e cria um mapa das ocorrências e um gráfico de sentimentos.
 
-## Requirements
+## Requisitos
 
-- Python.
-- Dependencies: `pandas`, `openpyxl`, `folium`, `matplotlib`, `nltk`, and `openai`.
-- An `OPENROUTER_API_KEY` or `OPENAI_API_KEY` environment variable to generate messages using the model configured for OpenRouter. Without an API key, the script uses local fallback messages.
+- Python instalado.
+- Dependências: `pandas`, `openpyxl`, `folium`, `matplotlib`, `nltk` e `openai`.
+- Uma chave `OPENROUTER_API_KEY` ou `OPENAI_API_KEY` para gerar mensagens usando o modelo configurado no OpenRouter. Sem uma chave, o script usa mensagens locais.
 
-Install the dependencies with:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-The script downloads the NLTK VADER lexicon on the first run, if needed.
-
-## Docker
-
-Build the image and run the app from the project root:
+Instale as dependências com:
 
 ```bash
-docker build -t sentiment-analysis .
-docker run --rm -e OPENROUTER_API_KEY sentiment-analysis
+python -m pip install pandas openpyxl folium matplotlib nltk openai
 ```
 
-The API key is optional; without it, the script uses local fallback messages. To
-keep generated files after the container exits, mount the output directory:
+O script baixa o léxico VADER do NLTK na primeira execução, se necessário.
 
-```bash
-docker run --rm -e OPENROUTER_API_KEY -v "${PWD}/output:/app/output" -v "${PWD}/data/processed:/app/data/processed" sentiment-analysis
-```
+## Dados de entrada
 
-## Input data
+Coloque a planilha `VeiculosSubtraidos_2024.xlsx` em `data/raw/`. O script lê a aba `AMOSTRAGEM` e usa campos como `BAIRRO`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA`, `DESCR_TIPO_VEICULO`, `LATITUDE` e `LONGITUDE`.
 
-Place `VeiculosSubtraidos_2024.xlsx` in `data/raw/`. The script reads the `AMOSTRAGEM` worksheet and uses fields such as `BAIRRO`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA`, `DESCR_TIPO_VEICULO`, `LATITUDE`, and `LONGITUDE`.
+## Execução
 
-## Run
-
-From the project root, run:
+Na raiz do projeto, execute:
 
 ```bash
 python rl_sentimental_app.py
 ```
 
-Messages are generated in English. Sentiment is analyzed with VADER. The Q-table selects among three prompts for the policing post and is updated using that post's sentiment score.
+As mensagens são geradas em inglês. O sentimento é calculado com VADER. A tabela Q escolhe entre três prompts para a mensagem sobre policiamento e é atualizada com o score de sentimento dessa mensagem.
 
-## Generated files
+## Arquivos gerados
 
-- `data/processed/mensagens_geradas.txt`: generated posts and sentiment analysis results.
-- `output/grafico_sentimentos.png`: chart of sentiment scores.
-- `output/mapa_crimes.html`: interactive map of incidents.
-- `output/q_table.json`: Q-table persisted between runs.
+- `data/processed/mensagens_geradas.txt`: publicações e resultados das análises de sentimento.
+- `output/grafico_sentimentos.html`: gráfico com os scores de sentimento.
+- `output/mapa_crimes.html`: mapa interativo das ocorrências.
+- `output/q_table.json`: tabela Q persistida entre execuções.
 
-If `output/q_table.json` does not exist yet, the script attempts to load the legacy `q_table.json` file from the project root. Subsequent updates are saved to `output/q_table.json`.
+Se `output/q_table.json` ainda não existir, o script tenta carregar a tabela legada `q_table.json` da raiz do projeto. As atualizações seguintes são gravadas em `output/q_table.json`.
 
-Generated files are excluded from Git. Mount `output/` and `data/processed/`
-when running the Docker container if you want to retain all generated files on
-the host.
-
-When the API is configured, the script waits three seconds between incidents to space out API requests.
+Quando a API está configurada, o script aguarda três segundos entre as ocorrências para espaçar as chamadas.
