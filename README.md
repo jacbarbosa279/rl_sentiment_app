@@ -20,6 +20,43 @@ The script downloads the NLTK VADER lexicon on the first run, if needed.
 
 Place `VeiculosSubtraidos_2024.xlsx` in `data/raw/`. The script reads the `AMOSTRAGEM` worksheet and uses fields such as `BAIRRO`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA`, `DESCR_TIPO_VEICULO`, `LATITUDE`, and `LONGITUDE`.
 
+## Architecture
+
+The diagram below shows the main data flow. The OpenRouter API is optional; without an API key, the app generates posts using local fallback messages.
+
+```mermaid
+flowchart TD
+    Data["Incident spreadsheet<br/>data/raw/*.xlsx"] --> Load["Load incident rows<br/>pandas"]
+    Load --> IncidentPrompt["Build incident-post prompt"]
+    IncidentPrompt --> Generator["Generate post<br/>OpenAI SDK"]
+    PolicePrompt["Build policing-post prompt"] --> Generator
+    Key{"API key configured?"} -->|Yes| API["OpenRouter API"]
+    Key -->|No| Fallback["Local fallback message"]
+    Generator --> Key
+    API --> Generated["Generated post"]
+    Fallback --> Generated
+
+    Generated --> RobberyPost["Incident post"]
+    Generated --> PolicePost["Policing post"]
+    RobberyPost --> VADER["Sentiment analysis<br/>NLTK VADER"]
+    VADER --> State["Map incident sentiment to RL state"]
+    QTable[("Q-table<br/>output/q_table.json")] --> Agent["Select policing prompt<br/>Q-learning"]
+    State --> Agent
+    Agent --> PolicePrompt
+    PolicePost --> PoliceSentiment["Policing post sentiment<br/>reward"]
+    PoliceSentiment --> Update["Update Q-table"]
+    Update --> QTable
+
+    Load --> Map["Build incident map<br/>Folium"]
+    RobberyPost --> Messages["Save posts and sentiment<br/>data/processed/mensagens_geradas.txt"]
+    PolicePost --> Messages
+    VADER --> Chart["Create sentiment chart<br/>Matplotlib"]
+    PoliceSentiment --> Chart
+
+    Map --> MapFile["output/mapa_crimes.html"]
+    Chart --> ChartFile["output/grafico_sentimentos.png"]
+```
+
 ## Run
 
 From the project root, run:
