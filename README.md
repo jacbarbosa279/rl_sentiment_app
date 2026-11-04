@@ -1,42 +1,96 @@
-# Aplicativo de análise de sentimentos
+# Sentiment Analysis App
 
-Este projeto gera publicações sobre ocorrências de roubo de veículos, analisa o sentimento dos textos, atualiza uma tabela Q de aprendizado por reforço e cria um mapa das ocorrências e um gráfico de sentimentos.
+This project generates social media posts about vehicle theft incidents, analyzes their sentiment, updates a reinforcement learning Q-table, and creates an incident map and sentiment chart.
 
-## Requisitos
+## Requirements
 
-- Python instalado.
-- Dependências: `pandas`, `openpyxl`, `folium`, `matplotlib`, `nltk` e `openai`.
-- Uma chave `OPENROUTER_API_KEY` ou `OPENAI_API_KEY` para gerar mensagens usando o modelo configurado no OpenRouter. Sem uma chave, o script usa mensagens locais.
+- Python.
+- Dependencies: `pandas`, `openpyxl`, `folium`, `matplotlib`, `nltk`, and `openai`.
+- An `OPENROUTER_API_KEY` or `OPENAI_API_KEY` environment variable to generate messages using the model configured for OpenRouter. Without an API key, the script uses local fallback messages.
 
-Instale as dependências com:
+Install the dependencies with:
 
 ```bash
-python -m pip install pandas openpyxl folium matplotlib nltk openai
+python -m pip install -r requirements.txt
 ```
 
-O script baixa o léxico VADER do NLTK na primeira execução, se necessário.
+The script downloads the NLTK VADER lexicon on the first run, if needed.
 
-## Dados de entrada
+## Input data
 
-Coloque a planilha `VeiculosSubtraidos_2024.xlsx` em `data/raw/`. O script lê a aba `AMOSTRAGEM` e usa campos como `BAIRRO`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA`, `DESCR_TIPO_VEICULO`, `LATITUDE` e `LONGITUDE`.
+Place `VeiculosSubtraidos_2024.xlsx` in `data/raw/`. The script reads the `AMOSTRAGEM` worksheet and uses fields such as `BAIRRO`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA`, `DESCR_TIPO_VEICULO`, `LATITUDE`, and `LONGITUDE`.
 
-## Execução
+## Architecture
 
-Na raiz do projeto, execute:
+The diagram below shows the main data flow. The OpenRouter API is optional; without an API key, the app generates posts using local fallback messages.
+
+```mermaid
+flowchart TD
+    Data["Incident spreadsheet<br/>data/raw/*.xlsx"] --> Load["Load incident rows<br/>pandas"]
+    Load --> IncidentPrompt["Build incident-post prompt"]
+    IncidentPrompt --> Generator["Generate post<br/>OpenAI SDK"]
+    PolicePrompt["Build policing-post prompt"] --> Generator
+    Key{"API key configured?"} -->|Yes| API["OpenRouter API"]
+    Key -->|No| Fallback["Local fallback message"]
+    Generator --> Key
+    API --> Generated["Generated post"]
+    Fallback --> Generated
+
+    Generated --> RobberyPost["Incident post"]
+    Generated --> PolicePost["Policing post"]
+    RobberyPost --> VADER["Sentiment analysis<br/>NLTK VADER"]
+    VADER --> State["Map incident sentiment to RL state"]
+    QTable[("Q-table<br/>output/q_table.json")] --> Agent["Select policing prompt<br/>Q-learning"]
+    State --> Agent
+    Agent --> PolicePrompt
+    PolicePost --> PoliceSentiment["Policing post sentiment<br/>reward"]
+    PoliceSentiment --> Update["Update Q-table"]
+    Update --> QTable
+
+    Load --> Map["Build incident map<br/>Folium"]
+    RobberyPost --> Messages["Save posts and sentiment<br/>data/processed/mensagens_geradas.txt"]
+    PolicePost --> Messages
+    VADER --> Chart["Create sentiment chart<br/>Matplotlib"]
+    PoliceSentiment --> Chart
+
+    Map --> MapFile["output/mapa_crimes.html"]
+    Chart --> ChartFile["output/grafico_sentimentos.png"]
+```
+
+## Run
+
+From the project root, run:
 
 ```bash
 python rl_sentimental_app.py
 ```
 
-As mensagens são geradas em inglês. O sentimento é calculado com VADER. A tabela Q escolhe entre três prompts para a mensagem sobre policiamento e é atualizada com o score de sentimento dessa mensagem.
+Messages are generated in English. Sentiment is analyzed with VADER. The Q-table selects among three prompts for the policing post and is updated using that post's sentiment score.
 
-## Arquivos gerados
+## Docker
 
-- `data/processed/mensagens_geradas.txt`: publicações e resultados das análises de sentimento.
-- `output/grafico_sentimentos.html`: gráfico com os scores de sentimento.
-- `output/mapa_crimes.html`: mapa interativo das ocorrências.
-- `output/q_table.json`: tabela Q persistida entre execuções.
+Build the image and run the app from the project root:
 
-Se `output/q_table.json` ainda não existir, o script tenta carregar a tabela legada `q_table.json` da raiz do projeto. As atualizações seguintes são gravadas em `output/q_table.json`.
+```bash
+docker build -t sentiment-analysis .
+docker run --rm -e OPENROUTER_API_KEY sentiment-analysis
+```
 
-Quando a API está configurada, o script aguarda três segundos entre as ocorrências para espaçar as chamadas.
+The API key is optional; without it, the script uses local fallback messages. To retain generated files after the container exits, mount the output and processed-data directories:
+
+```bash
+docker run --rm -e OPENROUTER_API_KEY -v "${PWD}/output:/app/output" -v "${PWD}/data/processed:/app/data/processed" sentiment-analysis
+```
+
+## Generated files
+
+- `data/processed/mensagens_geradas.txt`: generated posts and sentiment analysis results.
+- `output/grafico_sentimentos.png`: sentiment score chart.
+- `output/mapa_crimes.html`: interactive incident map.
+- `output/q_table.json`: Q-table persisted between runs.
+
+If `output/q_table.json` does not exist yet, the script attempts to load the legacy `q_table.json` file from the project root. Subsequent updates are saved to `output/q_table.json`.
+
+Generated files are excluded from Git. Mount `output/` and `data/processed/` when running the Docker container if you want to retain them on the host.
+
+When the API is configured, the script waits three seconds between incidents to space out API requests.
