@@ -1,3 +1,5 @@
+This project is derived from my MBA project and includes reinforcement learning (RL).
+
 # Sentiment Analysis App
 
 This project generates social media posts about vehicle theft incidents, analyzes their sentiment, updates a reinforcement learning Q-table, and creates an incident map and sentiment chart.
