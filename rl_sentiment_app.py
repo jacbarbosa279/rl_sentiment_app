@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 import webbrowser
 import folium
+import matplotlib
+matplotlib.use("Agg")  # Safe for Docker/headless environments.
 import matplotlib.pyplot as plt
 import nltk
 import pandas as pd
@@ -21,39 +23,48 @@ MAP_PATH = OUTPUT_DIR / "mapa_crimes.html"
 Q_TABLE_PATH = OUTPUT_DIR / "q_table.json"
 LEGACY_Q_TABLE_PATH = BASE_DIR / "q_table.json"
 
-# Download the resources required by NLTK.
-nltk.download('vader_lexicon', quiet=True)
+# Download the VADER lexicon only when it is not already available.
+try:
+    nltk.data.find("sentiment/vader_lexicon.zip")
+except LookupError:
+    if not nltk.download("vader_lexicon", quiet=True):
+        raise RuntimeError(
+            "Could not download the NLTK VADER lexicon. Check your internet connection "
+            "or install the lexicon manually."
+        )
 
 # Initialize the NLTK sentiment analyzer.
 sia = SentimentIntensityAnalyzer()
 
 # ==========================================
-# REINFORCEMENT LEARNING CONFIGURATION
+# CONTEXTUAL-BANDIT CONFIGURATION
 # ==========================================
-ALPHA = 0.1      # Learning rate
+ALPHA = 0.1      # Incremental action-value update rate
 EPSILON = 0.2    # Exploration rate (randomly test an action 20% of the time)
 
-def load_q_table():
-    """Load the agent's previous knowledge or create a new table."""
-    if Q_TABLE_PATH.exists():
-        with open(Q_TABLE_PATH, "r") as f:
-            return json.load(f)
-    if LEGACY_Q_TABLE_PATH.exists():
-        with open(LEGACY_Q_TABLE_PATH, "r") as f:
-            return json.load(f)
-    # States: "0" (very negative), "1" (slightly negative), "2" (neutral/positive)
+def load_action_values():
+    """Load previous action-value estimates or initialize a new table.
+
+    The old q_table.json filename is still read for backward compatibility.
+    The current update rule is an incremental contextual-bandit estimate,
+    not temporal-difference Q-learning (there is no next-state bootstrap).
+    """
+    for path in (Q_TABLE_PATH, LEGACY_Q_TABLE_PATH):
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as file:
+                return json.load(file)
+    # Contexts: "0" (very negative), "1" (slightly negative), "2" (neutral/positive)
     # Actions: "0", "1", "2"
     return {
-        "0": {"0": 0.0, "1": 0.0, "2": 0.0},
-        "1": {"0": 0.0, "1": 0.0, "2": 0.0},
-        "2": {"0": 0.0, "1": 0.0, "2": 0.0}
+        state: {action: 0.0 for action in ("0", "1", "2")}
+        for state in ("0", "1", "2")
     }
 
-def save_q_table(q_table):
-    """Save the learned values for the next run."""
+def save_action_values(action_values):
+    """Persist action-value estimates for subsequent runs."""
     Q_TABLE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(Q_TABLE_PATH, "w") as f:
-        json.dump(q_table, f, indent=4)
+    with open(Q_TABLE_PATH, "w", encoding="utf-8") as file:
+        json.dump(action_values, file, indent=4)
 
 def get_state(robbery_score):
     """Map the robbery sentiment score to a discrete state."""
@@ -61,12 +72,12 @@ def get_state(robbery_score):
     elif robbery_score < 0:  return "1" # Slightly negative
     return "2"                        # Neutral/positive
 
-def choose_action(state, q_table):
+def choose_action(state, action_values):
     """Choose which prompt to use (exploration vs. exploitation)."""
     if random.uniform(0, 1) < EPSILON:
         return str(random.choice([0, 1, 2])) # Explore
     else:
-        actions = q_table[state]
+        actions = action_values[state]
         return max(actions, key=actions.get)     # Exploit the best option
 
 
@@ -119,8 +130,8 @@ def main():
     robbery_sentiments = []
     policing_sentiments = []
 
-    # Load the reinforcement learning Q-table.
-    q_table = load_q_table()
+    # Load contextual-bandit action-value estimates.
+    action_values = load_action_values()
 
     with open(MESSAGES_PATH, "w", encoding="utf-8", buffering=1) as messages_file:
         for index, row in robbery_data.iterrows():
@@ -167,11 +178,11 @@ Include relevant hashtags."""
                 messages_file.flush()
 
                 # =========================================================
-                # REINFORCEMENT LEARNING CYCLE
+                # CONTEXTUAL-BANDIT DECISION CYCLE
                 # =========================================================
                 
                 current_state = get_state(robbery_sentiment['compound'])
-                chosen_action = choose_action(current_state, q_table)
+                chosen_action = choose_action(current_state, action_values)
                 
                 if chosen_action == "0":
                     policing_content = f"Write a very positive message praising the police's quick response and bravery in the neighborhood of {neighborhood} after the incident. Convey confidence."
@@ -196,20 +207,24 @@ Include relevant hashtags."""
                 
                 messages_file.write(f"Policing post:\n{policing_post}\n---\n")
 
-                # The agent receives a reward.
+                # This is a proxy reward: sentiment of the generated text.
+                # It is not an observed real-world outcome or evidence that
+                # the message improved public safety.
                 policing_sentiment = sia.polarity_scores(policing_post)
                 policing_sentiments.append(policing_sentiment)
-                
-                reward = policing_sentiment['compound']
-                print(f"Policing sentiment (RL reward): {reward:.4f}")
 
-                # Update the Q-table.
-                current_q = q_table[current_state][chosen_action]
-                new_q = current_q + ALPHA * (reward - current_q)
-                q_table[current_state][chosen_action] = new_q
+                reward = policing_sentiment['compound']
+                print(f"Policing sentiment (proxy reward): {reward:.4f}")
+
+                # Incremental contextual-bandit action-value update.
+                # No next state is modeled, so this is not Q-learning.
+                old_value = action_values[current_state][chosen_action]
+                action_values[current_state][chosen_action] = (
+                    old_value + ALPHA * (reward - old_value)
+                )
                 
                 # =======================================================
-                # END OF REINFORCEMENT LEARNING CYCLE
+                # END OF CONTEXTUAL-BANDIT DECISION CYCLE
                 # =====================================================
 
                 messages_file.write(
@@ -232,9 +247,9 @@ Include relevant hashtags."""
             if client is not None:
                 time.sleep(3)
 
-    save_q_table(q_table)
-    print("\n--- Updated Q-table (Agent Memory) ---")
-    print(json.dumps(q_table, indent=2))
+    save_action_values(action_values)
+    print("\n--- Updated action-value estimates ---")
+    print(json.dumps(action_values, indent=2))
 
     crime_map.save(MAP_PATH)
     print(f"Map saved to: {MAP_PATH}")
@@ -280,8 +295,9 @@ def generate_sentiment_chart(robbery_sentiments, policing_sentiments):
     print(f"Chart saved to {CHART_PATH}")
     plt.close()
 
-    if not webbrowser.open(CHART_PATH.resolve().as_uri()):
-        print("Could not open the chart automatically; open the PNG file at the path above.")
+    if os.environ.get("APP_HEADLESS", "0").lower() not in {"1", "true", "yes"}:
+        if not webbrowser.open(CHART_PATH.resolve().as_uri()):
+            print("Could not open the chart automatically; open the PNG file at the path above.")
 
 
 if __name__ == "__main__":
